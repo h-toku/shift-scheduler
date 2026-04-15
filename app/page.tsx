@@ -54,8 +54,8 @@ export default async function Home() {
                   さん！
                 </h1>
                 <p className="mt-2 font-medium text-stone-500">
-                  {staffInfo?.store 
-                    ? `今日の「${staffInfo.store.name}」の予定を確認しましょう！` 
+                  {staffInfo?.store
+                    ? `今日の「${staffInfo.store.name}」の予定を確認しましょう！`
                     : "所属店舗の情報を確認中です..."}
                 </p>
               </div>
@@ -65,15 +65,14 @@ export default async function Home() {
             </div>
           </div>
 
-          {/* シンプルなメニュー */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {[
               { title: "自分のシフト", desc: "今週の予定を確認する", color: "bg-orange-500" },
               { title: "みんなの予定", desc: "店舗全体の状況を見る", color: "bg-amber-400" },
               { title: "お休み申請", desc: "新しい希望を出す", color: "bg-orange-400" },
             ].map((item) => (
-              <button 
-                key={item.title} 
+              <button
+                key={item.title}
                 className="group relative overflow-hidden rounded-3xl bg-white border-2 border-orange-50 p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:border-orange-200 hover:shadow-lg"
               >
                 <div className={`mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl ${item.color} text-white`}>
