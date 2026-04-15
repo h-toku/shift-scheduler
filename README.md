@@ -9,7 +9,8 @@
 ## 技術スタック
 
 - **Frontend**: [Next.js](https://nextjs.org/) (App Router), [React](https://reactjs.org/), [TypeScript](https://www.typescriptlang.org/)
-- **Backend/Infrastructure**: [Vercel](https://vercel.com/), [Supabase](https://supabase.com/) (Database, Auth, Storage)
+- **Backend/Infrastructure**: [Vercel](https://vercel.com/), [Supabase](https://supabase.com/) (Database & Auth)
+- **ORM**: [Prisma](https://www.prisma.io/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **Linting**: [ESLint](https://eslint.org/)
 
@@ -19,7 +20,7 @@
   - 提出時に ESLint によるコード品質チェックが自動実行されます。
 - **マージ (Main Branch)**:
   - マージ完了後、Vercel への自動デプロイが実行されます。
-  - データベース（Supabase）のマイグレーションが自動的に適用されます。
+  - **Prisma** によるデータベースマイグレーション（`prisma migrate deploy` 等）が自動的に適用されます。
 
 ## 認証・権限構造
 
@@ -46,9 +47,9 @@
 │   ├── common/         # プロジェクト共通コンポーネント
 │   └── features/       # 各機能固有のコンポーネント (Shift, Auth等)
 ├── hooks/              # カスタムReactフック
-├── lib/                # 共通ユーティリティ、Supabaseクライアント
+├── lib/                # 共通ユーティリティ、Prisma/Supabaseクライアント
+├── prisma/             # Prisma スキーマ、マイグレーションファイル
 ├── server/             # Server Actions, サーバー側ロジック
-├── supabase/           # DBマイグレーション、スキーマ定義
 ├── types/              # TypeScript 型定義
 ├── public/             # 静的バイナリファイル
 └── ... (各種設定ファイル)

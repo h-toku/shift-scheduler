@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+
+  stores    Store[]
+
+  createdAt DateTime @default(now())
+}
+
+model Store {
+  id         String   @id @default(uuid())
+  name       String
+
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+
+  staffs     Staff[]
+
+  createdAt  DateTime @default(now())
+}
+
+model Staff {
+  id        String   @id  // ← SupabaseのUID使う
+  name      String
+  email     String?  @unique
+  gender    Gender?  
+  password  String?
+  
+
+  // 雇用タイプ（社員・バイトなど）
+  role      Role? @default(STAFF)
+
+  // 所属店舗
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
