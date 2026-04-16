@@ -23,6 +23,12 @@ enum Role {
   STAFF
 }
 
+enum ShiftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Company {
   id        String   @id @default(uuid())
   name      String
@@ -30,6 +36,8 @@ model Company {
   stores    Store[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 }
 
 model Store {
@@ -39,9 +47,14 @@ model Store {
   companyId  String
   company    Company  @relation(fields: [companyId], references: [id])
 
+  openingTime String
+  closingTime String
+
   staffs     Staff[]
 
   createdAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 }
 
 model Staff {
@@ -49,6 +62,7 @@ model Staff {
   name      String
   email     String?  @unique
   gender    Gender?  
+  birthday  DateTime? @db.Date
   password  String?
   
 
@@ -60,5 +74,17 @@ model Staff {
   store     Store    @relation(fields: [storeId], references: [id])
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 }
 
+model Shift {
+  id        String   @id @default(uuid())
+  staffId   String
+  date      DateTime
+  startTime DateTime
+  endTime   DateTime
+  status    ShiftStatus @default(PENDING)
+  
+  createdAt DateTime @default(now())
+}
