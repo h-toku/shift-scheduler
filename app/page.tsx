@@ -19,6 +19,43 @@ export default async function Home() {
     include: { store: true },
   });
 
+  const storeId = staffInfo?.storeId;
+
+  const staffList = await prisma.staff.findMany({
+    where: { storeId: storeId },
+  })
+
+  const shifts = await prisma.shift.findMany({
+    where: {
+      staffId: {
+        in: staffList.map((staff) => staff.id),
+      },
+      status: "APPROVED",
+    },
+  })
+
+  const days = ["月", "火", "水", "木", "金", "土", "日"]
+  const dayLabels = ["日", "月", "火", "水", "木", "金", "土"]
+
+  const shiftMap = shifts.reduce<Record<string, Record<string, string>>>((acc, shift) => {
+    const day = dayLabels[new Date(shift.date).getDay()]
+    if (!day) return acc
+
+    acc[shift.staffId] ??= {}
+    acc[shift.staffId][day] = [
+      new Date(shift.startTime).toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      new Date(shift.endTime).toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ].join(" - ")
+
+    return acc
+  }, {})
+
   return (
     <div className="flex min-h-screen flex-col bg-[#FFFDF5] text-stone-800 font-sans">
       {/* 優しいナビゲーション */}
@@ -65,25 +102,33 @@ export default async function Home() {
             </div>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { title: "自分のシフト", desc: "今週の予定を確認する", color: "bg-orange-500" },
-              { title: "みんなの予定", desc: "店舗全体の状況を見る", color: "bg-amber-400" },
-              { title: "お休み申請", desc: "新しい希望を出す", color: "bg-orange-400" },
-            ].map((item) => (
-              <button
-                key={item.title}
-                className="group relative overflow-hidden rounded-3xl bg-white border-2 border-orange-50 p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:border-orange-200 hover:shadow-lg"
-              >
-                <div className={`mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl ${item.color} text-white`}>
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-black text-stone-800 group-hover:text-orange-600 transition-colors">{item.title}</h3>
-                <p className="mt-1 text-sm font-medium text-stone-400">{item.desc}</p>
-              </button>
-            ))}
+          <div className="overflow-x-auto rounded-3xl bg-white border-2 border-orange-50 shadow-md">
+            <table className="min-w-full text-sm text-center border-collapse">
+              <thead className="bg-orange-50">
+                <tr>
+                  <th className="p-3 border">日付</th>
+                  {staffList.map((staff) => (
+                    <th key={staff.id} className="p-3 border">
+                      {staff.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {days.map((day) => (
+                  <tr key={day} className="hover:bg-orange-50/50">
+                    <td className="p-2 border font-bold">{day}</td>
+
+                    {staffList.map((staff) => (
+                      <td key={staff.id} className="p-2 border">
+                        {shiftMap[staff.id]?.[day] || ""}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </main>
