@@ -25,16 +25,36 @@ export default async function Home() {
     where: { storeId: storeId },
   })
 
-  const shifts = await prisma.Shift.findMany({
+  const shifts = await prisma.shift.findMany({
     where: {
-      staff: {
-        storeId: storeId, // ← ここ統一
+      staffId: {
+        in: staffList.map((staff) => staff.id),
       },
       status: "APPROVED",
     },
   })
 
   const days = ["月", "火", "水", "木", "金", "土", "日"]
+  const dayLabels = ["日", "月", "火", "水", "木", "金", "土"]
+
+  const shiftMap = shifts.reduce<Record<string, Record<string, string>>>((acc, shift) => {
+    const day = dayLabels[new Date(shift.date).getDay()]
+    if (!day) return acc
+
+    acc[shift.staffId] ??= {}
+    acc[shift.staffId][day] = [
+      new Date(shift.startTime).toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      new Date(shift.endTime).toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ].join(" - ")
+
+    return acc
+  }, {})
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FFFDF5] text-stone-800 font-sans">
