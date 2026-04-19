@@ -1,27 +1,35 @@
 import Link from "next/link";
-import { Role } from "@prisma/client";
-import HomeShell from "./home-shell";
+import HomeShell from "../../home-shell";
 import prisma from "@/lib/prisma";
 import { getAccessibleStores, pickSelectedStoreId, requireCurrentStaff } from "@/lib/auth";
 import { getNavigationItems } from "@/lib/navigation";
 
-type HomePageProps = {
-  searchParams: Promise<{ month?: string | string[]; storeId?: string | string[] }>;
+type ShiftHistoryPageProps = {
+  searchParams: Promise<{ year?: string | string[]; month?: string | string[]; storeId?: string | string[] }>;
 };
 
 type ShiftCellMap = Record<string, Record<string, string>>;
 
-function parseMonthOffset(monthParam: string | string[] | undefined) {
-  const value = Array.isArray(monthParam) ? monthParam[0] : monthParam;
-  return value === "next" ? 1 : 0;
+function pickParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-function startOfMonth(baseDate: Date, monthOffset: number) {
-  return new Date(baseDate.getFullYear(), baseDate.getMonth() + monthOffset, 1);
+function createMonthDate(yearParam: string | string[] | undefined, monthParam: string | string[] | undefined) {
+  const today = new Date();
+  const previousMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+
+  const year = Number(pickParam(yearParam));
+  const month = Number(pickParam(monthParam));
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return previousMonth;
+  }
+
+  return new Date(year, month - 1, 1);
 }
 
-function addMonths(baseDate: Date, months: number) {
-  return new Date(baseDate.getFullYear(), baseDate.getMonth() + months, 1);
+function shiftMonth(baseDate: Date, delta: number) {
+  return new Date(baseDate.getFullYear(), baseDate.getMonth() + delta, 1);
 }
 
 function formatDateKey(date: Date) {
@@ -148,34 +156,43 @@ function formatShiftTime(date: Date) {
   });
 }
 
-export default async function Home({ searchParams }: HomePageProps) {
+function buildHistoryHref(monthDate: Date, storeId: string) {
+  const params = new URLSearchParams({
+    year: String(monthDate.getFullYear()),
+    month: String(monthDate.getMonth() + 1),
+    storeId,
+  });
+
+  return `/shifts/history?${params.toString()}`;
+}
+
+export default async function ShiftHistoryPage({ searchParams }: ShiftHistoryPageProps) {
   const actor = await requireCurrentStaff();
-  const [{ month, storeId: requestedStoreId }, accessibleStores] = await Promise.all([
-    searchParams,
-    getAccessibleStores(actor.role, actor.storeId, actor.store.companyId),
-  ]);
+  const resolvedParams = await searchParams;
+  const accessibleStores = await getAccessibleStores(actor.role, actor.storeId, actor.store.companyId);
 
   const selectedStoreId = pickSelectedStoreId(
-    requestedStoreId,
+    resolvedParams.storeId,
     accessibleStores.map((store) => store.id),
     actor.storeId
   );
   const selectedStore = accessibleStores.find((store) => store.id === selectedStoreId) ?? actor.store;
 
-  const staffList = await prisma.staff.findMany({
-    where: { storeId: selectedStoreId, deletedAt: null },
-    orderBy: [{ role: "asc" }, { name: "asc" }],
-  });
+  const selectedMonthStart = createMonthDate(resolvedParams.year, resolvedParams.month);
+  const nextMonthStart = shiftMonth(selectedMonthStart, 1);
+  const previousMonthStart = shiftMonth(selectedMonthStart, -1);
+  const followingMonthStart = shiftMonth(selectedMonthStart, 1);
+  const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-  const monthOffset = parseMonthOffset(month);
-  const today = new Date();
-  const selectedMonthStart = startOfMonth(today, monthOffset);
-  const nextMonthStart = addMonths(selectedMonthStart, 1);
+  const storeStaffs = await prisma.staff.findMany({
+    where: { storeId: selectedStoreId },
+    orderBy: [{ deletedAt: "asc" }, { role: "asc" }, { name: "asc" }],
+  });
 
   const shifts = await prisma.shift.findMany({
     where: {
       staffId: {
-        in: staffList.map((staff) => staff.id),
+        in: storeStaffs.map((staff) => staff.id),
       },
       status: "APPROVED",
       date: {
@@ -185,6 +202,9 @@ export default async function Home({ searchParams }: HomePageProps) {
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
+
+  const shiftedStaffIds = new Set(shifts.map((shift) => shift.staffId));
+  const staffList = storeStaffs.filter((staff) => staff.deletedAt === null || shiftedStaffIds.has(staff.id));
 
   const shiftMap = shifts.reduce<ShiftCellMap>((acc, shift) => {
     const dateKey = formatDateKey(new Date(shift.date));
@@ -203,6 +223,7 @@ export default async function Home({ searchParams }: HomePageProps) {
     year: "numeric",
     month: "long",
   });
+  const today = new Date();
   const navigationItems = getNavigationItems(actor.role);
 
   return (
@@ -210,63 +231,95 @@ export default async function Home({ searchParams }: HomePageProps) {
       staffName={actor.name}
       storeName={actor.store.name}
       navigationItems={navigationItems}
-      currentPath="/"
+      currentPath="/shifts/history"
     >
       <div className="mb-8 rounded-[32px] border border-orange-100 bg-white p-8 shadow-xl shadow-orange-950/5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.32em] text-orange-400">Calendar</p>
-            <h2 className="mt-3 text-3xl font-black text-stone-800">{monthLabel}のシフトカレンダー</h2>
+            <p className="text-xs font-bold uppercase tracking-[0.32em] text-orange-400">Shift History</p>
+            <h2 className="mt-3 text-3xl font-black text-stone-800">{monthLabel}の過去シフト</h2>
             <p className="mt-3 text-sm font-medium text-stone-500">
               {selectedStore.name}
+              {selectedStore.deletedAt ? " / 削除済み店舗" : ""}
               {selectedStore.company ? ` / ${selectedStore.company.name}` : ""}
-              を表示中
             </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:items-end">
-            <div className="inline-flex rounded-2xl bg-orange-50 p-1">
+            <div className="flex flex-wrap items-center gap-2">
               <Link
-                href={selectedStoreId ? `/?storeId=${selectedStoreId}` : "/"}
-                className={`rounded-2xl px-5 py-3 text-sm font-bold transition-colors ${
-                  monthOffset === 0 ? "bg-white text-orange-600 shadow-sm" : "text-stone-500 hover:text-orange-600"
-                }`}
+                href={buildHistoryHref(previousMonthStart, selectedStoreId)}
+                className="rounded-2xl border border-orange-100 px-4 py-3 text-sm font-bold text-stone-500 hover:text-orange-600"
               >
-                当月
+                前月
               </Link>
               <Link
-                href={`/?month=next${selectedStoreId ? `&storeId=${selectedStoreId}` : ""}`}
-                className={`rounded-2xl px-5 py-3 text-sm font-bold transition-colors ${
-                  monthOffset === 1 ? "bg-white text-orange-600 shadow-sm" : "text-stone-500 hover:text-orange-600"
-                }`}
+                href={buildHistoryHref(currentMonthStart, selectedStoreId)}
+                className="rounded-2xl border border-orange-100 px-4 py-3 text-sm font-bold text-stone-500 hover:text-orange-600"
+              >
+                今月
+              </Link>
+              <Link
+                href={buildHistoryHref(followingMonthStart, selectedStoreId)}
+                className="rounded-2xl border border-orange-100 px-4 py-3 text-sm font-bold text-stone-500 hover:text-orange-600"
               >
                 翌月
               </Link>
             </div>
 
-            {(actor.role === Role.ADMIN || actor.role === Role.OWNER) && (
-              <form className="flex flex-wrap items-center gap-3" method="get">
-                {monthOffset === 1 ? <input type="hidden" name="month" value="next" /> : null}
-                <label className="text-sm font-bold text-stone-500" htmlFor="storeId">
-                  表示店舗
-                </label>
-                <select
-                  id="storeId"
-                  name="storeId"
-                  defaultValue={selectedStoreId}
-                  className="rounded-2xl border border-orange-100 bg-orange-50/60 px-4 py-3 text-sm font-bold text-stone-700"
-                >
-                  {accessibleStores.map((store) => (
-                    <option key={store.id} value={store.id}>
-                      {store.name}
-                    </option>
-                  ))}
-                </select>
-                <button className="rounded-2xl border border-orange-100 px-4 py-3 text-sm font-bold text-stone-500 hover:text-orange-600">
-                  切り替え
-                </button>
-              </form>
-            )}
+            <form className="flex flex-wrap items-center gap-3" method="get">
+              <label className="text-sm font-bold text-stone-500" htmlFor="historyYear">
+                年
+              </label>
+              <select
+                id="historyYear"
+                name="year"
+                defaultValue={String(selectedMonthStart.getFullYear())}
+                className="rounded-2xl border border-orange-100 bg-orange-50/60 px-4 py-3 text-sm font-bold text-stone-700"
+              >
+                {Array.from({ length: 5 }, (_, index) => currentMonthStart.getFullYear() - 2 + index).map((year) => (
+                  <option key={year} value={year}>
+                    {year}年
+                  </option>
+                ))}
+              </select>
+
+              <label className="text-sm font-bold text-stone-500" htmlFor="historyMonth">
+                月
+              </label>
+              <select
+                id="historyMonth"
+                name="month"
+                defaultValue={String(selectedMonthStart.getMonth() + 1)}
+                className="rounded-2xl border border-orange-100 bg-orange-50/60 px-4 py-3 text-sm font-bold text-stone-700"
+              >
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                  <option key={month} value={month}>
+                    {month}月
+                  </option>
+                ))}
+              </select>
+
+              <label className="text-sm font-bold text-stone-500" htmlFor="historyStoreId">
+                店舗
+              </label>
+              <select
+                id="historyStoreId"
+                name="storeId"
+                defaultValue={selectedStoreId}
+                className="rounded-2xl border border-orange-100 bg-orange-50/60 px-4 py-3 text-sm font-bold text-stone-700"
+              >
+                {accessibleStores.map((store) => (
+                  <option key={store.id} value={store.id}>
+                    {store.name}{store.deletedAt ? "（削除済み）" : ""}
+                  </option>
+                ))}
+              </select>
+
+              <button className="rounded-2xl border border-orange-100 px-4 py-3 text-sm font-bold text-stone-500 hover:text-orange-600">
+                表示
+              </button>
+            </form>
           </div>
         </div>
       </div>
@@ -282,7 +335,9 @@ export default async function Home({ searchParams }: HomePageProps) {
                 {staffList.map((staff) => (
                   <th
                     key={staff.id}
-                    className="sticky top-0 z-20 min-w-20 border-r border-b border-orange-100 bg-orange-50 px-1.5 py-2.5 font-bold leading-tight break-words last:border-r-0"
+                    className={`sticky top-0 z-20 min-w-20 border-r border-b border-orange-100 px-1.5 py-2.5 font-bold leading-tight break-words last:border-r-0 ${
+                      staff.deletedAt ? "bg-stone-200 text-stone-500" : "bg-orange-50"
+                    }`}
                   >
                     {staff.name}
                   </th>
@@ -317,7 +372,9 @@ export default async function Home({ searchParams }: HomePageProps) {
                     {staffList.map((staff) => (
                       <td
                         key={staff.id}
-                        className="border-r border-b border-orange-100 px-1.5 py-2 align-top font-medium text-stone-600 last:border-r-0"
+                        className={`border-r border-b border-orange-100 px-1.5 py-2 align-top font-medium last:border-r-0 ${
+                          staff.deletedAt ? "bg-stone-100 text-stone-500" : "text-stone-600"
+                        }`}
                       >
                         {shiftMap[dateKey]?.[staff.id] || ""}
                       </td>
