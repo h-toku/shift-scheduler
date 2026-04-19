@@ -1,6 +1,28 @@
-import { login, signup } from './actions'
+import { login } from './actions'
 
-export default function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<{ error?: string | string[]; message?: string | string[] }>
+}
+
+function pickParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const { error, message } = await searchParams
+  const errorCode = pickParam(error)
+  const messageCode = pickParam(message)
+
+  const errorMessage =
+    errorCode === 'invalid_credentials'
+      ? 'スタッフIDまたはパスワードが正しくありません。'
+      : null
+
+  const infoMessage =
+    messageCode === 'signup_disabled'
+      ? '新規登録は現在無効です。管理者にお問い合わせください。'
+      : null
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FFFDF5] p-6 font-sans">
       <div className="w-full max-w-[400px] animate-in fade-in zoom-in duration-500">
@@ -28,6 +50,18 @@ export default function LoginPage() {
           </div>
 
           <form className="relative z-10 space-y-6">
+            {errorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-600">
+                {errorMessage}
+              </div>
+            ) : null}
+
+            {infoMessage ? (
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-bold text-orange-600">
+                {infoMessage}
+              </div>
+            ) : null}
+
             <div className="space-y-1.5">
               <label
                 htmlFor="staffId"
