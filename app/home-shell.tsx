@@ -66,8 +66,8 @@ export default function HomeShell({
       <main className="flex w-full flex-1 gap-6 px-4 py-8 lg:px-6">
         {/* サイドバーは開いているときだけ描画する */}
         {sidebarOpen ? (
-          <aside className="w-full max-w-xs shrink-0 self-start">
-            <div className="sticky top-24 overflow-hidden rounded-[32px] border border-orange-100 bg-white shadow-xl shadow-orange-950/5">
+          <aside className="sticky top-24 w-full max-w-xs shrink-0 self-start">
+            <div className="max-h-[calc(100vh-7.5rem)] overflow-auto rounded-[32px] border border-orange-100 bg-white shadow-xl shadow-orange-950/5">
               <div className="space-y-3 p-5">
                 {navigationItems.map((item) =>
                   item.href ? (
