@@ -58,6 +58,7 @@ async function main() {
         birthday: staff.birthday,
         email: `${staff.id}@example.com`,
         password: DEFAULT_PASSWORD,
+        storeId: 'store-mugiwara',
       },
       create: {
         ...staff,
@@ -91,6 +92,7 @@ async function main() {
         birthday: staff.birthday,
         email: `${staff.id}@example.com`,
         password: DEFAULT_PASSWORD,
+        storeId: 'store-navy',
       },
       create: {
         ...staff,
@@ -136,6 +138,7 @@ async function main() {
         birthday: staff.birthday,
         email: `${staff.id}@example.com`,
         password: DEFAULT_PASSWORD,
+        storeId: 'store-konoha',
       },
       create: {
         ...staff,
@@ -169,6 +172,7 @@ async function main() {
         birthday: staff.birthday,
         email: `${staff.id}@example.com`,
         password: DEFAULT_PASSWORD,
+        storeId: 'store-akatsuki',
       },
       create: {
         ...staff,
@@ -197,6 +201,7 @@ async function main() {
         birthday: staff.birthday,
         email: `${staff.id}@example.com`,
         password: DEFAULT_PASSWORD,
+        storeId: 'store-suna',
       },
       create: {
         ...staff,
