@@ -260,3 +260,139 @@ export async function createShiftAction(formData: FormData) {
   revalidatePath("/shifts/new");
   redirect("/shifts/new");
 }
+
+type ShiftDecisionItem = {
+  staffId: string;
+  staffName: string;
+  date: string;
+  pendingShiftIds: string[];
+  action: "approve" | "reject";
+};
+
+export type ApplyShiftDecisionsState = {
+  ok: boolean;
+  message: string | null;
+  errors: string[];
+};
+
+export async function applyShiftDecisionsAction(
+  _prevState: ApplyShiftDecisionsState,
+  formData: FormData
+): Promise<ApplyShiftDecisionsState> {
+  const actor = await requireCurrentStaff();
+  const storeId = asString(formData.get("storeId"));
+  const rawDecisions = asString(formData.get("decisions"));
+
+  if (!rawDecisions) {
+    return { ok: false, message: null, errors: ["操作対象がありません。"] };
+  }
+
+  const targetStore = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { id: true, companyId: true },
+  });
+  if (!targetStore || !canManageStore(actor.role, actor.storeId, actor.store.companyId, targetStore)) {
+    redirect("/");
+  }
+
+  let decisions: ShiftDecisionItem[];
+  try {
+    decisions = JSON.parse(rawDecisions) as ShiftDecisionItem[];
+  } catch {
+    return { ok: false, message: null, errors: ["登録データの形式が不正です。"] };
+  }
+
+  if (!Array.isArray(decisions) || decisions.length === 0) {
+    return { ok: false, message: null, errors: ["操作対象がありません。"] };
+  }
+
+  const validationErrors: string[] = [];
+
+  for (const item of decisions) {
+    if (!item.staffId || !item.date || !Array.isArray(item.pendingShiftIds)) {
+      validationErrors.push("登録データの項目が不足しています。");
+      continue;
+    }
+    if (item.pendingShiftIds.length === 0) {
+      validationErrors.push(
+        `希望にないシフトを登録しようとしています（${item.staffName} / ${item.date}）`
+      );
+    }
+  }
+
+  if (validationErrors.length > 0) {
+    return { ok: false, message: null, errors: validationErrors };
+  }
+
+  let approvedCount = 0;
+  let rejectedCount = 0;
+
+  for (const item of decisions) {
+    const pendingShifts = await prisma.shift.findMany({
+      where: {
+        id: { in: item.pendingShiftIds },
+        staffId: item.staffId,
+        status: ShiftStatus.PENDING,
+      },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    });
+
+    if (pendingShifts.length === 0) {
+      validationErrors.push(
+        `希望にないシフトを登録しようとしています（${item.staffName} / ${item.date}）`
+      );
+      continue;
+    }
+
+    if (item.action === "approve") {
+      for (const shift of pendingShifts) {
+        const exists = await prisma.shift.findFirst({
+          where: {
+            staffId: shift.staffId,
+            date: shift.date,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+            status: ShiftStatus.APPROVED,
+          },
+          select: { id: true },
+        });
+        if (!exists) {
+          await prisma.shift.create({
+            data: {
+              staffId: shift.staffId,
+              date: shift.date,
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+              status: ShiftStatus.APPROVED,
+            },
+          });
+          approvedCount += 1;
+        }
+      }
+      continue;
+    }
+
+    await prisma.shift.updateMany({
+      where: {
+        id: { in: pendingShifts.map((shift) => shift.id) },
+        status: ShiftStatus.PENDING,
+      },
+      data: { status: ShiftStatus.REJECTED },
+    });
+    rejectedCount += pendingShifts.length;
+  }
+
+  if (validationErrors.length > 0) {
+    return { ok: false, message: null, errors: validationErrors };
+  }
+
+  revalidatePath("/");
+  revalidatePath("/shifts/new");
+  revalidatePath("/shifts/history");
+
+  return {
+    ok: true,
+    message: `登録完了: APPROVED ${approvedCount}件 / REJECTED ${rejectedCount}件`,
+    errors: [],
+  };
+}
