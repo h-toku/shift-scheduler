@@ -14,6 +14,23 @@
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **Linting**: [ESLint](https://eslint.org/)
 
+## ローカル起動手順（ログイン確認まで）
+
+1. 依存関係をインストールする
+   - `npm install`
+2. ローカルDBを起動する
+   - `npm run db:up`
+3. マイグレーションを適用する
+   - `npx prisma migrate deploy`
+4. シードデータを投入する
+   - `npx prisma db seed`
+5. 開発サーバーを起動する
+   - `npm run dev`
+6. `http://localhost:3000/login` にアクセスしてログインする
+   - 例: スタッフID `user-luffy` / パスワード `password123`
+
+> ログインで `invalid_credentials` が出る場合は、3-4 の手順が未実行か失敗している可能性が高いです。
+
 ## CI/CD 開発フロー
 
 - **プルリクエスト (PR)**:

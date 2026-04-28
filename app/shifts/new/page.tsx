@@ -1,9 +1,10 @@
-import { Role, ShiftStatus } from "@prisma/client";
+import { Role } from "@prisma/client";
 import HomeShell from "../../home-shell";
-import { createShiftAction } from "../../admin-actions";
+import { applyShiftDecisionsAction } from "../../admin-actions";
 import { getAccessibleStores, pickSelectedStoreId, requireAdminOrOwner, requireCurrentStaff } from "@/lib/auth";
 import { getNavigationItems } from "@/lib/navigation";
 import prisma from "@/lib/prisma";
+import ShiftApprovalGrid from "./shift-approval-grid";
 
 type ShiftCreatePageProps = {
   searchParams: Promise<{ storeId?: string | string[] }>;
@@ -33,6 +34,60 @@ export default async function ShiftCreatePage({ searchParams }: ShiftCreatePageP
     orderBy: { name: "asc" },
   });
 
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const nextMonthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
+
+  const pendingShifts = await prisma.shift.findMany({
+    where: {
+      staffId: { in: staffs.map((staff) => staff.id) },
+      status: "PENDING",
+      date: {
+        gte: monthStart,
+        lt: nextMonthStart,
+      },
+    },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
+  });
+
+  const visibleDates: { key: string; label: string; isoDate: string }[] = [];
+  const cursor = new Date(monthStart);
+  while (cursor < nextMonthStart) {
+    const iso = `${cursor.getFullYear()}-${`${cursor.getMonth() + 1}`.padStart(2, "0")}-${`${cursor.getDate()}`.padStart(2, "0")}`;
+    const weekday = cursor.toLocaleDateString("ja-JP", { weekday: "short" });
+    visibleDates.push({
+      key: iso,
+      isoDate: iso,
+      label: `${cursor.getMonth() + 1}/${cursor.getDate()} (${weekday})`,
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const pendingMap = pendingShifts.reduce<Record<string, Record<string, { pendingText: string; pendingShiftIds: string[] }>>>(
+    (acc, shift) => {
+      const date = new Date(shift.date);
+      const dateKey = `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
+      const timeText = `${new Date(shift.startTime).toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })} - ${new Date(shift.endTime).toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
+      const current = acc[dateKey]?.[shift.staffId];
+      if (!acc[dateKey]) acc[dateKey] = {};
+      if (!current) {
+        acc[dateKey][shift.staffId] = { pendingText: timeText, pendingShiftIds: [shift.id] };
+      } else {
+        acc[dateKey][shift.staffId] = {
+          pendingText: `${current.pendingText} / ${timeText}`,
+          pendingShiftIds: [...current.pendingShiftIds, shift.id],
+        };
+      }
+      return acc;
+    },
+    {}
+  );
+
   return (
     <HomeShell
       staffName={actor.name}
@@ -45,7 +100,7 @@ export default async function ShiftCreatePage({ searchParams }: ShiftCreatePageP
           <p className="text-xs font-bold uppercase tracking-[0.32em] text-orange-400">Shift Create</p>
           <h2 className="mt-3 text-3xl font-black text-stone-800">シフト作成</h2>
           <p className="mt-3 text-sm font-medium text-stone-500">
-            STAFF のシフトを日付ごとに登録できます。
+            当月の希望シフト（PENDING）を採用/却下して登録できます。
           </p>
         </div>
 
@@ -71,50 +126,13 @@ export default async function ShiftCreatePage({ searchParams }: ShiftCreatePageP
             </button>
           </form>
 
-          <form action={createShiftAction} className="grid gap-5 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-sm font-bold text-stone-600">スタッフ</span>
-              <select name="staffId" className="w-full rounded-2xl border border-orange-100 px-4 py-3">
-                {staffs.map((staff) => (
-                  <option key={staff.id} value={staff.id}>
-                    {staff.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-bold text-stone-600">日付</span>
-              <input type="date" name="date" className="w-full rounded-2xl border border-orange-100 px-4 py-3" />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-bold text-stone-600">開始時刻</span>
-              <input type="time" name="startTime" className="w-full rounded-2xl border border-orange-100 px-4 py-3" />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-bold text-stone-600">終了時刻</span>
-              <input type="time" name="endTime" className="w-full rounded-2xl border border-orange-100 px-4 py-3" />
-            </label>
-
-            <label className="space-y-2 md:col-span-2">
-              <span className="text-sm font-bold text-stone-600">状態</span>
-              <select name="status" defaultValue={ShiftStatus.APPROVED} className="w-full rounded-2xl border border-orange-100 px-4 py-3">
-                {Object.values(ShiftStatus).map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="md:col-span-2">
-              <button className="rounded-2xl bg-orange-500 px-6 py-3 text-sm font-black text-white hover:bg-orange-600">
-                シフトを登録
-              </button>
-            </div>
-          </form>
+          <ShiftApprovalGrid
+            storeId={selectedStoreId}
+            staffs={staffs.map((staff) => ({ id: staff.id, name: staff.name }))}
+            visibleDates={visibleDates}
+            pendingMap={pendingMap}
+            applyAction={applyShiftDecisionsAction}
+          />
         </div>
       </div>
     </HomeShell>

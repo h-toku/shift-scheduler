@@ -74,6 +74,10 @@ export function pickSelectedStoreId(
     return storeId;
   }
 
+  if (accessibleStoreIds.includes(fallbackStoreId)) {
+    return fallbackStoreId;
+  }
+
   return accessibleStoreIds[0] || fallbackStoreId;
 }
 

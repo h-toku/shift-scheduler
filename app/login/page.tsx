@@ -16,6 +16,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const errorMessage =
     errorCode === 'invalid_credentials'
       ? 'スタッフIDまたはパスワードが正しくありません。'
+      : errorCode === 'auth_unavailable'
+        ? '認証基盤に接続できませんでした。DB起動とシード投入を確認してください。'
       : null
 
   const infoMessage =
@@ -103,6 +105,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 ログインする
               </button>
             </div>
+
+            {process.env.NODE_ENV === 'development' ? (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700">
+                開発用ヒント: 初期データは `npx prisma db seed` で投入されます。ログイン例:
+                ID=`user-luffy` / パスワード=`password123`
+              </div>
+            ) : null}
           </form>
 
           <footer className="relative z-10 mt-10 text-center">
