@@ -396,3 +396,177 @@ export async function applyShiftDecisionsAction(
     errors: [],
   };
 }
+
+type ShiftRequestItem = {
+  staffId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
+
+export type UpsertPendingShiftRequestsState = {
+  ok: boolean;
+  message: string | null;
+  errors: string[];
+};
+
+function isValidTimeText(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isDateInNextMonth(dateText: string, now: Date) {
+  const [year, month, day] = dateText.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return false;
+  const date = new Date(year, month - 1, day);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const followingMonthStart = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+  return date >= nextMonthStart && date < followingMonthStart;
+}
+
+export async function upsertPendingShiftRequestsAction(
+  _prevState: UpsertPendingShiftRequestsState,
+  formData: FormData
+): Promise<UpsertPendingShiftRequestsState> {
+  const actor = await requireCurrentStaff();
+  const rawRequests = asString(formData.get("requests"));
+
+  if (!rawRequests) {
+    return { ok: false, message: null, errors: ["登録データがありません。"] };
+  }
+
+  let requests: ShiftRequestItem[];
+  try {
+    requests = JSON.parse(rawRequests) as ShiftRequestItem[];
+  } catch {
+    return { ok: false, message: null, errors: ["登録データの形式が不正です。"] };
+  }
+
+  if (!Array.isArray(requests) || requests.length === 0) {
+    return { ok: false, message: null, errors: ["登録データがありません。"] };
+  }
+
+  const validationErrors: string[] = [];
+  const normalizedRequests: ShiftRequestItem[] = [];
+  const now = new Date();
+  const targetStaffIds = Array.from(
+    new Set(
+      requests
+        .map((item) => (typeof item?.staffId === "string" ? item.staffId : ""))
+        .filter((id) => id.length > 0)
+    )
+  );
+
+  const targetStaffs = await prisma.staff.findMany({
+    where: { id: { in: targetStaffIds } },
+    include: { store: true },
+  });
+  const targetStaffById = new Map(targetStaffs.map((staff) => [staff.id, staff]));
+
+  for (const item of requests) {
+    const staffId = typeof item?.staffId === "string" ? item.staffId : "";
+    const date = typeof item?.date === "string" ? item.date : "";
+    const startTime = typeof item?.startTime === "string" ? item.startTime : "";
+    const endTime = typeof item?.endTime === "string" ? item.endTime : "";
+    const targetStaff = targetStaffById.get(staffId);
+
+    const hasStart = startTime.trim().length > 0;
+    const hasEnd = endTime.trim().length > 0;
+    if (!hasStart && !hasEnd) {
+      continue;
+    }
+    if (!staffId || !targetStaff) {
+      validationErrors.push(`対象スタッフが不正です（${date || "日付不明"}）。`);
+      continue;
+    }
+    if (targetStaff.store.companyId !== actor.store.companyId) {
+      validationErrors.push(`他社スタッフは編集できません（${targetStaff.name}）。`);
+      continue;
+    }
+    if (actor.role === Role.ADMIN && targetStaff.storeId !== actor.storeId) {
+      validationErrors.push(`所属店舗以外は編集できません（${targetStaff.name}）。`);
+      continue;
+    }
+    if (actor.role !== Role.ADMIN && actor.role !== Role.OWNER && targetStaff.id !== actor.id) {
+      validationErrors.push(`自分以外は編集できません（${targetStaff.name}）。`);
+      continue;
+    }
+    if (!hasStart || !hasEnd) {
+      validationErrors.push(`開始・終了時刻を両方入力してください（${date || "日付不明"}）。`);
+      continue;
+    }
+    if (!isDateInNextMonth(date, now)) {
+      validationErrors.push(`翌月以外の日付は登録できません（${date}）。`);
+      continue;
+    }
+    if (!isValidTimeText(startTime) || !isValidTimeText(endTime)) {
+      validationErrors.push(`時刻は HH:mm 形式で入力してください（${date}）。`);
+      continue;
+    }
+    if (startTime >= endTime) {
+      validationErrors.push(`開始時刻は終了時刻より前にしてください（${date}）。`);
+      continue;
+    }
+
+    normalizedRequests.push({ staffId, date, startTime, endTime });
+  }
+
+  if (validationErrors.length > 0) {
+    return { ok: false, message: null, errors: validationErrors };
+  }
+  if (normalizedRequests.length === 0) {
+    return { ok: false, message: null, errors: ["登録対象がありません。"] };
+  }
+
+  let createdCount = 0;
+  let updatedCount = 0;
+
+  for (const item of normalizedRequests) {
+    const dateAtMidnight = toDateTime(item.date, "00:00");
+    const startAt = toDateTime(item.date, item.startTime);
+    const endAt = toDateTime(item.date, item.endTime);
+
+    const existing = await prisma.shift.findFirst({
+      where: {
+        staffId: item.staffId,
+        date: dateAtMidnight,
+        status: ShiftStatus.PENDING,
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, startTime: true, endTime: true },
+    });
+
+    if (existing) {
+      const changed =
+        existing.startTime.getTime() !== startAt.getTime() || existing.endTime.getTime() !== endAt.getTime();
+      if (changed) {
+        await prisma.shift.update({
+          where: { id: existing.id },
+          data: { startTime: startAt, endTime: endAt },
+        });
+        updatedCount += 1;
+      }
+      continue;
+    }
+
+    await prisma.shift.create({
+      data: {
+        staffId: item.staffId,
+        date: dateAtMidnight,
+        startTime: startAt,
+        endTime: endAt,
+        status: ShiftStatus.PENDING,
+      },
+    });
+    createdCount += 1;
+  }
+
+  revalidatePath("/shifts/request");
+  revalidatePath("/shifts/new");
+  revalidatePath("/");
+
+  return {
+    ok: true,
+    message: `登録完了: 新規 ${createdCount}件 / 更新 ${updatedCount}件`,
+    errors: [],
+  };
+}

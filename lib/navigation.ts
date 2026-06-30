@@ -8,7 +8,7 @@ export type NavigationItem = {
 export function getNavigationItems(role: Role | null | undefined): NavigationItem[] {
   const items: NavigationItem[] = [
     { label: "シフトカレンダー", href: "/" },
-    { label: "シフト希望提出" },
+    { label: "シフト希望提出", href: "/shifts/request" },
     { label: "過去のシフト確認", href: "/shifts/history" },
   ];
 
